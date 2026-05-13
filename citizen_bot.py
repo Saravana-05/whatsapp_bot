@@ -1,229 +1,158 @@
 import httpx
+import json
 import re
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date as _date
+from pathlib import Path
 from fastapi import FastAPI, Request
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 app = FastAPI()
 
-# --- 1. CONFIGURATION ---
-ACCESS_TOKEN      = "EAAVYo9qkDuQBReDDTzK1HQJkgjQ31NzRB49PZC1G9Ob7QmqvhVd396qfrRr5iLGdiJespRdJ9MLuLrsTgZA8EyIsDPilOxekNNcGmKkKN8rR98WpUXZAQGyoiDmZATHLDGvRBiSge2AXgcpOCz7JZCQKhPXpKtkwFyZBQLz3ByW5whAXcIVAUZBAF0UTyukcwAJKOHpXoG4rGWrIZAHGubAFkVGtSefjiI99zV3wO4vFK2IxARgfIFTMfOA4O2oj8q0G5wpCyloZA11Is6A9jX6V50TAW"
-PHONE_NUMBER_ID   = "1003362262871598"
-VERIFY_TOKEN      = "my_cafe_bot"
-BUSINESS_EMAIL    = "designs@citizenprint.com"  
+# ---------------------------------------------------------------------------
+# 1. CONFIGURATION  -- fill these before running
+# ---------------------------------------------------------------------------
+ACCESS_TOKEN    = "EAAVYo9qkDuQBRScqbPdHV3qgZBtUUJZB8wnnyfpUdY1FJICnnuJWzcAdI7UNjsn4wbtyBWpZCx6y07j6u0lCs9YaDRyOEmNrbUibJIT4LYTVp3hbnoNNGYRdV1Gp3p2zfFfulGMZASHV13o2dKWWOvnPfY2vIIgiNAhYsQOSYOKyCY3N4umG1WxDIwMw1tBnYKZCUltqZBZAIEZAvB3LyQJedjnkq7wkZCq3qJeQU82ZCzm7LnZBapo8QdAN5O6qN9nk9jjTGUxGcpI0RdYmXZBlfzW5rTGS"
+PHONE_NUMBER_ID = "1003362262871598"
+VERIFY_TOKEN    = "my_cafe_bot"
+BUSINESS_EMAIL  = "designs@citizenprint.com"
 
-# --- 2. STATE STORAGE ---
-user_states = {}   
-user_orders = {}   
+# ---------------------------------------------------------------------------
+# 2. LOAD flow.json
+# ---------------------------------------------------------------------------
+FLOW_PATH = Path(__file__).parent / "flow.json"
 
-# --- 3. PRODUCT CATALOG ---
-# PRODUCT_DETAILS: Full description for each product.
-# Format per product:
-#   "display_name"  : shown in order confirmations
-#   "emoji"         : used in messages
-#   "description"   : what the product is
-#   "sizes"         : available sizes / formats
-#   "finish"        : finishing options
-#   "best_for"      : ideal use cases
-#   "min_qty"       : minimum order quantity
-PRODUCT_DETAILS = {
-    "Visiting Cards": {
-        "display_name": "Visiting Cards",
-        "emoji": "💼",
-        "description": "Professional visiting cards to make a lasting first impression.",
-        "sizes": "Standard (3.5\" × 2\") | Square (2.5\" × 2.5\") | Slim (3.5\" × 1.5\")",
-        "finish": "Matte | Glossy | Soft Touch | UV Spot | Foil",
-        "best_for": "Professionals, freelancers, business networking",
-        "min_qty": "100 cards",
-    },
-    "Business Cards": {
-        "display_name": "Business Cards",
-        "emoji": "🏢",
-        "description": "Premium business cards with corporate-grade print quality.",
-        "sizes": "Standard (3.5\" × 2\") | Premium (3.5\" × 2.5\")",
-        "finish": "Matte | Glossy | Embossed | Foil | Velvet Lamination",
-        "best_for": "Corporate professionals, companies, startups",
-        "min_qty": "100 cards",
-    },
-    "Flyers": {
-        "display_name": "Flyers",
-        "emoji": "📄",
-        "description": "Eye-catching single-sheet flyers for promotions and announcements.",
-        "sizes": "A4 | A5 | A6 | DL (⅓ A4)",
-        "finish": "Matte | Glossy | Uncoated",
-        "best_for": "Events, sales promotions, product launches, offers",
-        "min_qty": "100 flyers",
-    },
-    "Pamphlets": {
-        "display_name": "Pamphlets",
-        "emoji": "📰",
-        "description": "Folded pamphlets ideal for detailed product or service information.",
-        "sizes": "A4 Bi-fold | A4 Tri-fold | A5 Bi-fold",
-        "finish": "Matte | Glossy",
-        "best_for": "Product info, service guides, educational material",
-        "min_qty": "100 pamphlets",
-    },
-    "Brochures": {
-        "display_name": "Brochures",
-        "emoji": "📑",
-        "description": "Multi-panel brochures for detailed brand storytelling.",
-        "sizes": "A4 Tri-fold | A4 Z-fold | A4 Bi-fold | A5 Bi-fold",
-        "finish": "Matte | Glossy | Soft Touch Lamination",
-        "best_for": "Company profiles, product catalogs, tourism, real estate",
-        "min_qty": "50 brochures",
-    },
-    "Banners": {
-        "display_name": "Banners",
-        "emoji": "🎌",
-        "description": "Large-format banners for high-visibility indoor and outdoor use.",
-        "sizes": "2×4 ft | 3×6 ft | 4×8 ft | Custom sizes available",
-        "finish": "Vinyl (Outdoor) | Fabric (Indoor) | Mesh (Windy areas)",
-        "best_for": "Events, shop fronts, trade shows, outdoor advertising",
-        "min_qty": "1 banner",
-    },
-    "Posters": {
-        "display_name": "Posters",
-        "emoji": "🖼️",
-        "description": "Vibrant full-colour posters to display your message boldly.",
-        "sizes": "A3 | A2 | A1 | A0 | Custom",
-        "finish": "Matte | Glossy | Satin",
-        "best_for": "Events, advertising, décor, announcements",
-        "min_qty": "10 posters",
-    },
-    "Stickers": {
-        "display_name": "Stickers",
-        "emoji": "🏷️",
-        "description": "Custom-cut stickers in any shape for branding and packaging.",
-        "sizes": "Circle | Square | Rectangle | Custom die-cut shapes",
-        "finish": "Matte | Glossy | Transparent | Waterproof",
-        "best_for": "Product labels, packaging, branding, giveaways",
-        "min_qty": "100 stickers",
-    },
-    "Letterheads": {
-        "display_name": "Letterheads",
-        "emoji": "📋",
-        "description": "Branded letterheads to give your official correspondence a professional look.",
-        "sizes": "A4 (standard)",
-        "finish": "Matte | Glossy | Uncoated Bond Paper",
-        "best_for": "Business letters, quotes, invoices, official documents",
-        "min_qty": "100 sheets",
-    },
-    "Envelopes": {
-        "display_name": "Envelopes",
-        "emoji": "✉️",
-        "description": "Custom-printed envelopes with your logo and return address.",
-        "sizes": "DL | C5 | C4 | A4 Pocket",
-        "finish": "White | Brown Kraft | Custom colour",
-        "best_for": "Corporate mailers, invitations, official correspondence",
-        "min_qty": "100 envelopes",
-    },
-    "ID Cards": {
-        "display_name": "ID Cards",
-        "emoji": "🪪",
-        "description": "Durable PVC ID cards for staff, students, and membership use.",
-        "sizes": "CR80 Standard (3.375\" × 2.125\") — wallet size",
-        "finish": "Glossy PVC | Frosted | with or without lamination pouch",
-        "best_for": "Employee IDs, student cards, membership cards, access cards",
-        "min_qty": "25 cards",
-    },
-    "Calendars": {
-        "display_name": "Calendars",
-        "emoji": "📅",
-        "description": "Customised wall and desk calendars branded with your logo.",
-        "sizes": "Wall Calendar (A3/A4) | Desk Calendar (A5) | Pocket Calendar",
-        "finish": "Matte | Glossy | Spiral-bound | Staple-bound",
-        "best_for": "Corporate gifting, brand promotion, offices, year-end gifts",
-        "min_qty": "25 calendars",
-    },
-}
+def load_flow() -> dict:
+    with open(FLOW_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-# PRODUCT_CATALOG: Keyword → display name mapping (used for detection)
-# Add synonyms here; the display name must match a key in PRODUCT_DETAILS above.
-PRODUCT_CATALOG = {
-    "visiting card":    "Visiting Cards",
-    "visiting cards":   "Visiting Cards",
-    "business card":    "Business Cards",
-    "business cards":   "Business Cards",
-    "flyer":            "Flyers",
-    "flyers":           "Flyers",
-    "pamphlet":         "Pamphlets",
-    "pamphlets":        "Pamphlets",
-    "brochure":         "Brochures",
-    "brochures":        "Brochures",
-    "banner":           "Banners",
-    "banners":          "Banners",
-    "poster":           "Posters",
-    "posters":          "Posters",
-    "sticker":          "Stickers",
-    "stickers":         "Stickers",
-    "letterhead":       "Letterheads",
-    "letterheads":      "Letterheads",
-    "envelope":         "Envelopes",
-    "envelopes":        "Envelopes",
-    "id card":          "ID Cards",
-    "id cards":         "ID Cards",
-    "calendar":         "Calendars",
-    "calendars":        "Calendars",
-}
+FLOW             = load_flow()
+STATES           = FLOW["states"]
+PRODUCTS         = FLOW["products"]
+PRODUCT_KEYWORDS = FLOW["product_keywords"]
 
-# Keywords that indicate the customer is ASKING ABOUT a product (not ordering).
-# IMPORTANT: only use multi-word or unambiguous phrases here.
-# Single common words like "available", "options", "about" were removed
-# because they appear in normal order sentences and cause false matches.
-INQUIRY_KEYWORDS = [
-    "what is", "what are", "tell me about", "more info", "information",
-    "describe", "description", "explain",
-    "do you have", "do you sell", "do you provide", "do you offer",
-    "what do you offer", "what do you provide", "what do you sell",
-    "what products", "what services", "your products", "your services",
-    "how much", "what is the price", "what are the rates",
-    "specification", "what sizes", "what finish",
-]
+# States whose keywords always work even mid-flow
+ESCAPE_STATES   = {"WELCOME", "CATALOG", "HOURS", "SUNDAY_HOLIDAY", "ORDER", "PRODUCT_INFO"}
+# States that are actively waiting for a specific customer reply
+MID_FLOW_STATES = {"AWAITING_PRODUCT", "AWAITING_DATE"}
 
-# --- 4. FUNCTION BLOCKS ---
+# ---------------------------------------------------------------------------
+# 3. SESSION STORE
+# ---------------------------------------------------------------------------
+sessions: dict = {}
 
-def get_welcome():
+def get_session(sender: str) -> dict:
+    if sender not in sessions:
+        sessions[sender] = _blank_session(sender)
+    return sessions[sender]
+
+def _blank_session(sender: str) -> dict:
+    return {
+        "sender":    sender,
+        "state":     "IDLE",
+        "product":   None,
+        "quantity":  None,
+        "placed_at": None,
+        "delivery":  None,
+    }
+
+def reset_session(sender: str) -> None:
+    sessions[sender] = _blank_session(sender)
+
+# ---------------------------------------------------------------------------
+# 4. HELPERS
+# ---------------------------------------------------------------------------
+
+def fill_placeholders(template: str, session: dict) -> str:
     return (
-        "🖨️ *Welcome to Citizen Print!*\n\n"
-        "How can I help you today?\n\n"
-        "📦 Type *Order* to browse our catalog\n"
-        "🛍️ Or just tell me what you need!\n"
-        "   _Example: 'I need 500 visiting cards'_\n"
-        "🕒 Type *Hours* to know our timings\n"
-        "📋 Type *Catalog* to see all products"
+        template
+        .replace("{product}",        session.get("product")   or "—")
+        .replace("{quantity}",       session.get("quantity")  or "—")
+        .replace("{placed_at}",      session.get("placed_at") or "—")
+        .replace("{delivery}",       session.get("delivery")  or "—")
+        .replace("{sender}",         session.get("sender")    or "—")
+        .replace("{business_email}", BUSINESS_EMAIL)
     )
 
 
-def get_catalog():
-    """Short product list — shown when customer types 'catalog' or 'products'."""
-    lines = "\n".join(
-        f"  {p['emoji']} *{p['display_name']}* — {p['description']}"
-        for p in PRODUCT_DETAILS.values()
-    )
-    return (
-        "📋 *Citizen Print — What We Offer*\n\n"
-        "We provide printing assistance for the following products:\n\n"
-        f"{lines}\n\n"
-        "💬 Type the product name to get full details.\n"
-        "   _Example: 'Tell me about banners' or 'visiting card info'_\n\n"
-        "📦 Ready to order? Just say:\n"
-        "   _'500 visiting cards'_ or _'Order 200 flyers'_"
-    )
-
-
-def get_product_description(product_name):
+def find_state_by_keyword(text_lower: str):
     """
-    Returns a detailed description card for a specific product.
-    Called when customer asks about a product without placing an order.
+    Scan every state's keyword list.
+    Returns the state name with the LONGEST matching keyword, or None.
+    IDLE always has an empty keywords list so it is never returned here.
     """
-    p = PRODUCT_DETAILS.get(product_name)
+    best_state, best_len = None, 0
+    for state_name, state_def in STATES.items():
+        for kw in state_def.get("keywords", []):
+            if kw in text_lower and len(kw) > best_len:
+                best_state, best_len = state_name, len(kw)
+    return best_state
+
+
+def scan_product_and_quantity(text: str) -> tuple:
+    t    = text.lower()
+    nums = list(re.finditer(r'\b(\d[\d,]*)\b', t))
+    detected_product, product_pos = None, None
+    for kw in sorted(PRODUCT_KEYWORDS.keys(), key=len, reverse=True):
+        idx = t.find(kw)
+        if idx != -1:
+            detected_product, product_pos = PRODUCT_KEYWORDS[kw], idx
+            break
+    if not detected_product:
+        return None, None
+    qty = None
+    if nums:
+        closest = min(nums, key=lambda m: abs(m.start() - product_pos))
+        qty = closest.group(1).replace(",", "")
+    return detected_product, qty
+
+
+def parse_delivery_date(text: str):
+    today = datetime.now().date()
+    t     = text.strip().lower()
+    if t == "today":    return today.strftime("%A, %d %B %Y")
+    if t == "tomorrow": return (today + timedelta(days=1)).strftime("%A, %d %B %Y")
+    weekdays = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"]
+    for i, day in enumerate(weekdays):
+        if f"next {day}" in t or t == day:
+            ahead = (i - today.weekday() + 7) % 7 or 7
+            return (today + timedelta(days=ahead)).strftime("%A, %d %B %Y")
+    m = re.search(r'\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})\b', t)
+    if m:
+        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        y = y + 2000 if y < 100 else y
+        try: return _date(y, mo, d).strftime("%A, %d %B %Y")
+        except ValueError: pass
+    months = {
+        "jan":1,"january":1,"feb":2,"february":2,"mar":3,"march":3,
+        "apr":4,"april":4,"may":5,"jun":6,"june":6,"jul":7,"july":7,
+        "aug":8,"august":8,"sep":9,"sept":9,"september":9,
+        "oct":10,"october":10,"nov":11,"november":11,"dec":12,"december":12,
+    }
+    for pat, df in [
+        (re.search(r'\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+)\s*(\d{4})?\b', t), True),
+        (re.search(r'\b([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?\s*(\d{4})?\b', t), False),
+    ]:
+        if not pat: continue
+        g = pat.groups()
+        try:
+            if df: d, ms, yr = int(g[0]), g[1], g[2]
+            else:  ms, d, yr = g[0], int(g[1]), g[2]
+            if ms not in months: continue
+            mo = months[ms]
+            y  = int(yr) if yr else (today.year if mo >= today.month else today.year + 1)
+            return _date(y, mo, d).strftime("%A, %d %B %Y")
+        except (ValueError, TypeError): continue
+    return None
+
+
+def build_product_info(product_name: str) -> str:
+    p = PRODUCTS.get(product_name)
     if not p:
-        return None
+        return action_show_catalog({}, "", "")[0]
     return (
-        f"{p['emoji']} *{p['display_name']} — Product Details*\n\n"
+        f"{p['emoji']} *{product_name} -- Product Details*\n\n"
         f"📝 *About:* {p['description']}\n\n"
         f"📐 *Available Sizes:*\n   {p['sizes']}\n\n"
         f"✨ *Finish Options:*\n   {p['finish']}\n\n"
@@ -231,395 +160,275 @@ def get_product_description(product_name):
         f"📦 *Minimum Order:* {p['min_qty']}\n\n"
         "─────────────────────\n"
         "Ready to order? Just say:\n"
-        f"_'500 {p['display_name'].lower()}'_ and we'll get started! 🚀"
+        f"_'500 {product_name.lower()}'_ and we'll get started! 🚀"
     )
 
+# ---------------------------------------------------------------------------
+# 5. ACTION FUNCTIONS
+# ---------------------------------------------------------------------------
 
-def is_product_inquiry(text_lower):
-    """
-    Returns True if the message looks like a question or inquiry
-    about products rather than an order.
-    e.g. 'what products do you have', 'tell me about banners', 'do you sell stickers'
-    """
-    return any(kw in text_lower for kw in INQUIRY_KEYWORDS)
-
-
-def start_order_flow(sender):
-    """Called when customer types 'order' without specifying a product."""
-    user_states[sender] = "AWAITING_PRODUCT"
-    return (
-        "📦 *Let's start your order!*\n\n"
-        "Please tell me *what product* you need and *how many*.\n\n"
-        "_Example: 500 visiting cards, 200 flyers, 1000 stickers_"
-    )
+def action_welcome(session: dict, msg_type: str, text: str):
+    """Returns the welcome/greeting message. Handles hi, hello, hey, help, menu."""
+    return fill_placeholders(STATES["WELCOME"]["message"], session), "IDLE"
 
 
-def detect_product_and_quantity(text):
-    """
-    Scans a free-text message for a known product and an optional quantity.
-    Finds the number that appears CLOSEST to the product keyword,
-    so '500 banners' and 'banners 500' both work correctly.
-    Returns (product_display_name, quantity_str) or (None, None).
-    """
-    text_lower = text.lower()
+def action_route_idle(session: dict, msg_type: str, text: str):
+    """Free-form input handler — runs when no keyword matched."""
+    t      = text.lower().strip()
+    sender = session["sender"]
 
-    # Find all numbers and their positions in the text
-    number_matches = list(re.finditer(r'\b(\d[\d,]*)\b', text_lower))
+    # "info <product>" direct lookup
+    if t.startswith("info "):
+        query = t[5:].strip()
+        for kw in sorted(PRODUCT_KEYWORDS.keys(), key=len, reverse=True):
+            if kw in query:
+                return build_product_info(PRODUCT_KEYWORDS[kw]), "IDLE"
+        return STATES["FALLBACK"]["message"], "IDLE"
 
-    # Match the longest product keyword first (so "visiting cards" beats "cards")
-    detected_product = None
-    product_pos = None
-    for keyword in sorted(PRODUCT_CATALOG.keys(), key=len, reverse=True):
-        idx = text_lower.find(keyword)
-        if idx != -1:
-            detected_product = PRODUCT_CATALOG[keyword]
-            product_pos = idx
-            break
+    # Product + quantity → start order chain
+    product, quantity = scan_product_and_quantity(t)
+    if product and quantity:
+        session["product"]   = product
+        session["quantity"]  = quantity
+        session["placed_at"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
+        logger.info(f"[ORDER] {sender} started -> {session}")
+        return fill_placeholders(STATES["AWAITING_DATE"]["message"], session), "AWAITING_DATE"
 
-    if not detected_product:
-        return None, None
-
-    # Pick the number closest to the product keyword position
-    quantity = None
-    if number_matches:
-        closest = min(number_matches, key=lambda m: abs(m.start() - product_pos))
-        quantity = closest.group(1).replace(',', '')
-
-    return detected_product, quantity
-
-
-def confirm_catalog_order(sender, product, quantity):
-    """
-    Called when product + quantity is detected.
-    Immediately confirms the order, asks ONLY for delivery date,
-    and instructs customer to email the design.
-    """
-    # Stamp the order-placed time in IST
-    now = datetime.now()
-    order_time = now.strftime("%d %b %Y, %I:%M %p")
-
-    user_orders[sender] = {
-        "product":        product,
-        "quantity":       quantity or "As requested",
-        "order_placed_at": order_time,
-        "delivery_date":  None,
-    }
-    user_states[sender] = "AWAITING_DATE"
-
-    qty_display = f"{quantity} " if quantity else ""
-    return (
-        f"✅ *Your Order is Placed!*\n\n"
-        f"🛍️ *Product:*  {product}\n"
-        f"🔢 *Quantity:* {qty_display}{product.lower()}\n"
-        f"🕒 *Order Placed:* {order_time}\n\n"
-        "To complete your order, we need one more thing:\n\n"
-        "📅 *Please tell us your preferred delivery date.*\n"
-        "   _Example: 10th June, 15/06/2025, next Monday_\n\n"
-        "🎨 *Please share your design file to our email:*\n"
-        f"   📧 *{BUSINESS_EMAIL}*\n"
-        "   _Mention your WhatsApp number in the email subject._\n\n"
-        "Our team will review and confirm shortly! 🖨️"
-    )
-
-
-def handle_awaiting_product(sender, text):
-    """Handles free-text input when bot is waiting for product specification."""
-    product, quantity = detect_product_and_quantity(text)
+    # Product mentioned with inquiry phrasing → info card
     if product:
-        return confirm_catalog_order(sender, product, quantity)
+        inquiry_kws = STATES["PRODUCT_INFO"].get("keywords", [])
+        if any(kw in t for kw in inquiry_kws):
+            return build_product_info(product), "IDLE"
+        p = PRODUCTS.get(product, {})
+        return (
+            f"{p.get('emoji','🖨️')} *{product}* -- great choice!\n\n"
+            "What would you like to do?\n\n"
+            f"📋 Type *info {product.lower()}* -- sizes, finish & full details\n"
+            f"📦 Tell us the quantity -- e.g. _'500 {product.lower()}'_"
+        ), "IDLE"
+
+    return STATES["FALLBACK"]["message"], "IDLE"
+
+
+def action_start_order(session: dict, msg_type: str, text: str):
+    return fill_placeholders(STATES["AWAITING_PRODUCT"]["message"], session), "AWAITING_PRODUCT"
+
+
+def action_detect_product_and_quantity(session: dict, msg_type: str, text: str):
+    if msg_type != "text":
+        return "Please *type* the product and quantity.\n_Example: 500 visiting cards_", "AWAITING_PRODUCT"
+    product, quantity = scan_product_and_quantity(text.lower())
+    if not product:
+        return (
+            "🤔 I couldn't identify a product.\n\n"
+            "Please mention a product and quantity:\n"
+            "_'500 visiting cards'_ or _'200 flyers'_\n\n"
+            "Type *Catalog* to see all products."
+        ), "AWAITING_PRODUCT"
+    session["product"]   = product
+    session["quantity"]  = quantity or "As requested"
+    session["placed_at"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
+    logger.info(f"[ORDER] {session['sender']} product set -> {session}")
+    return fill_placeholders(STATES["AWAITING_DATE"]["message"], session), "AWAITING_DATE"
+
+
+def action_parse_delivery_date(session: dict, msg_type: str, text: str):
+    if msg_type != "text":
+        return (
+            f"📅 Please *type your preferred delivery date.*\n"
+            f"   _Example: 10th June, 15/06/2025, next Monday_\n\n"
+            f"🎨 And email your design to *{BUSINESS_EMAIL}*"
+        ), "AWAITING_DATE"
+    parsed = parse_delivery_date(text)
+    if not parsed:
+        return (
+            "🤔 I didn't quite catch that date. Please try:\n\n"
+            "• _10th June_\n• _15/06/2025_\n• _June 15_\n• _Next Monday_"
+        ), "AWAITING_DATE"
+    session["delivery"] = parsed
+    logger.info(f"[ORDER] {session['sender']} date set -> {session}")
+    reply = fill_placeholders(STATES["CONFIRMED"]["message"], session)
+    reset_session(session["sender"])
+    return reply, "IDLE"
+
+
+def action_finalize_order(session: dict, msg_type: str, text: str):
+    reset_session(session["sender"])
+    return "", "IDLE"
+
+
+WEEKDAY_HOURS = "10:00 AM – 8:00 PM"
+SUNDAY_HOURS  = "10:00 AM – 6:00 PM"
+
+def action_show_hours(session: dict, msg_type: str, text: str):
+    today_name   = datetime.now().strftime("%A")
+    t            = text.lower()
+    sunday_kws   = [
+        "sunday", "holiday", "holidays", "public holiday", "national holiday",
+        "open on sunday", "open sunday", "working on sunday",
+        "open on holiday", "open on holidays", "are you open on sunday",
+        "do you work on sunday", "open during holiday", "available on sunday",
+    ]
+    asked_sunday = any(kw in t for kw in sunday_kws)
+
+    if asked_sunday:
+        return (
+            "🟢 *Yes! Citizen Print is open on Sundays.*\n\n"
+            f"🕒 *Sunday Hours:*  {SUNDAY_HOURS}\n"
+            f"🕒 *Mon – Sat:*     {WEEKDAY_HOURS}\n\n"
+            "📌 *Note:* We are closed only on *national public holidays*.\n"
+            "   Orders placed on holidays are processed the next working day.\n\n"
+            "📦 Type *Order* to place an order\n"
+            "📋 Type *Catalog* to see our products"
+        ), "IDLE"
+    elif today_name == "Sunday":
+        return (
+            f"🟢 *Today is Sunday — we're open!*\n\n"
+            f"🕒 *Today's Hours:* {SUNDAY_HOURS}\n"
+            f"🕒 *Mon – Sat:*     {WEEKDAY_HOURS}\n\n"
+            "📦 Type *Order* to place an order\n"
+            "📋 Type *Catalog* to see our products"
+        ), "IDLE"
     else:
         return (
-            "🤔 I couldn't identify a product in your message.\n\n"
-            "Please mention a product name and quantity, like:\n"
-            "_'500 visiting cards'_ or _'200 flyers'_\n\n"
-            "Type *Catalog* to see all available products."
-        )
+            f"🟢 *Citizen Print — Today is {today_name}*\n\n"
+            f"🕒 *Today's Hours:* {WEEKDAY_HOURS}\n"
+            f"🕒 *Sunday:*        {SUNDAY_HOURS}\n\n"
+            "📦 Type *Order* to place an order\n"
+            "📋 Type *Catalog* to see our products"
+        ), "IDLE"
 
 
-def parse_delivery_date(text):
-    """
-    Tries to understand a delivery date typed by the customer.
-    Returns a clean formatted date string like "Monday, 12 May 2025"
-    or None if nothing recognisable was found.
-
-    Handles:
-      - DD/MM/YYYY  or  DD-MM-YYYY  or  DD.MM.YYYY
-      - "10th June", "June 10", "10 June 2025"
-      - "today", "tomorrow", "next Monday" … "next Sunday"
-    """
-    from datetime import date as _date
-
-    now   = datetime.now()
-    today = now.date()
-    text  = text.strip().lower()
-
-    # ── Relative keywords ─────────────────────────────────────────────────────
-    if text in ("today",):
-        return today.strftime("%A, %d %B %Y")
-    if text in ("tomorrow",):
-        return (today + timedelta(days=1)).strftime("%A, %d %B %Y")
-
-    weekdays = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"]
-    for i, day in enumerate(weekdays):
-        if f"next {day}" in text or text == day:
-            days_ahead = (i - today.weekday() + 7) % 7 or 7
-            return (today + timedelta(days=days_ahead)).strftime("%A, %d %B %Y")
-
-    # ── DD/MM/YYYY  DD-MM-YYYY  DD.MM.YYYY ───────────────────────────────────
-    m = re.search(r'\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})\b', text)
-    if m:
-        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        y = y + 2000 if y < 100 else y
-        try:
-            return _date(y, mo, d).strftime("%A, %d %B %Y")
-        except ValueError:
-            pass
-
-    # ── "10th June", "June 10", "10 June", "10 June 2025" ────────────────────
-    months = {
-        "jan":1,"january":1,"feb":2,"february":2,"mar":3,"march":3,
-        "apr":4,"april":4,"may":5,"jun":6,"june":6,"jul":7,"july":7,
-        "aug":8,"august":8,"sep":9,"sept":9,"september":9,
-        "oct":10,"october":10,"nov":11,"november":11,"dec":12,"december":12,
-    }
-    day_m   = re.search(r'\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+)\s*(\d{4})?\b', text)
-    month_d = re.search(r'\b([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?\s*(\d{4})?\b', text)
-
-    for pattern, is_day_first in [(day_m, True), (month_d, False)]:
-        if not pattern:
-            continue
-        g = pattern.groups()
-        try:
-            if is_day_first:
-                d, mon_str, yr = int(g[0]), g[1], g[2]
-            else:
-                mon_str, d, yr = g[0], int(g[1]), g[2]
-            if mon_str not in months:
-                continue
-            mo = months[mon_str]
-            y  = int(yr) if yr else (today.year if mo >= today.month else today.year + 1)
-            return _date(y, mo, d).strftime("%A, %d %B %Y")
-        except (ValueError, TypeError):
-            continue
-
-    return None
-
-
-def handle_awaiting_date(sender, msg_type, msg):
-    """
-    State: AWAITING_DATE
-    Design is sent by email — so we only wait for the delivery date here.
-    Accepts any text the customer types as the delivery date.
-    Rejects non-text messages with a gentle reminder.
-    """
-    if msg_type != 'text':
-        return (
-            "📅 Please *type your preferred delivery date* to complete the order.\n"
-            f"   _Example: 10th June, 15/06/2025, next Monday_\n\n"
-            f"🎨 And don't forget to email your design to *{BUSINESS_EMAIL}*"
-        )
-
-    raw_date = msg.get('text', {}).get('body', '').strip()
-
-    # ── Parse / validate the date the customer typed ──────────────────────────
-    parsed_date = parse_delivery_date(raw_date)
-
-    if parsed_date is None:
-        # Could not understand the date — ask again politely
-        return (
-            "🤔 I didn't quite catch that date.\n\n"
-            "Please type your delivery date clearly, for example:\n"
-            "• _10th June_\n"
-            "• _15/06/2025_\n"
-            "• _June 15_\n"
-            "• _Next Monday_"
-        )
-
-    order = user_orders.get(sender, {})
-    order['delivery_date'] = parsed_date
-    user_orders[sender] = order
-    return finalize_order(sender)
-
-
-def finalize_order(sender):
-    """Finalizes the order — called once delivery date is confirmed."""
-    order        = user_orders.get(sender, {})
-    product      = order.get('product',          'Your product')
-    quantity     = order.get('quantity',          'N/A')
-    delivery     = order.get('delivery_date',     'N/A')
-    placed_at    = order.get('order_placed_at', datetime.now().strftime("%d %b %Y, %I:%M %p"))
-
-    # Reset state
-    user_states[sender] = "IDLE"
-    user_orders.pop(sender, None)
-
-    return (
-        "🎉 *ORDER CONFIRMED — Citizen Print*\n"
-        "━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🛍️ *Product:*        {product}\n"
-        f"🔢 *Quantity:*       {quantity}\n"
-        f"🕒 *Order Placed:*   {placed_at}\n"
-        f"📅 *Delivery Date:*  {delivery}\n"
-        f"📂 *Status:*         Pending Design Review\n"
-        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "🎨 *Next Step — Send Your Design:*\n"
-        f"   📧 Email your design file to *{BUSINESS_EMAIL}*\n"
-        "   ✏️ Subject: Your WhatsApp number + product name\n"
-        "   _Example subject: 919876543210 — Visiting Cards_\n\n"
-        "Our team will contact you for *payment & final confirmation*.\n"
-        "Thank you for choosing *Citizen Print!* 🖨️"
+def action_show_catalog(session: dict, msg_type: str, text: str):
+    lines = "\n".join(
+        f"  {p['emoji']} *{name}* -- {p['description']}"
+        for name, p in PRODUCTS.items()
     )
+    return (
+        "📋 *Citizen Print -- What We Offer*\n\n"
+        "We provide printing for:\n\n"
+        f"{lines}\n\n"
+        "💬 Type a product name for full details.\n"
+        "   _Example: 'Tell me about banners'_\n\n"
+        "📦 Ready to order? Just say:\n"
+        "   _'500 visiting cards'_ or _'200 flyers'_"
+    ), "IDLE"
 
 
-# --- 5. COMMAND REGISTRY ---
-# Simple keyword → function mapping for menu-style commands
-commands = {
-    "hi":       lambda s: get_welcome(),
-    "hello":    lambda s: get_welcome(),
-    "hey":      lambda s: get_welcome(),
-    "order":    lambda s: start_order_flow(s),
-    "hours":    lambda s: "🕒 *Citizen Print* is open today until *8:00 PM*. See you soon!",
-    "catalog":  lambda s: get_catalog(),
-    "products": lambda s: get_catalog(),
-    "services": lambda s: get_catalog(),
-    "menu":     lambda s: get_welcome(),
-    "help":     lambda s: get_welcome(),
+def action_show_product_info(session: dict, msg_type: str, text: str):
+    t = text.lower()
+    for kw in sorted(PRODUCT_KEYWORDS.keys(), key=len, reverse=True):
+        if kw in t:
+            return build_product_info(PRODUCT_KEYWORDS[kw]), "IDLE"
+    return action_show_catalog(session, msg_type, text)
+
+# ---------------------------------------------------------------------------
+# 6. ACTION MAP
+# ---------------------------------------------------------------------------
+ACTION_MAP: dict = {
+    "welcome":                     action_welcome,
+    "route_idle":                  action_route_idle,
+    "start_order":                 action_start_order,
+    "detect_product_and_quantity": action_detect_product_and_quantity,
+    "parse_delivery_date":         action_parse_delivery_date,
+    "finalize_order":              action_finalize_order,
+    "show_hours":                  action_show_hours,
+    "show_catalog":                action_show_catalog,
+    "show_product_info":           action_show_product_info,
 }
 
+# ---------------------------------------------------------------------------
+# 7. ROUTER
+# ---------------------------------------------------------------------------
 
-# --- 6. MAIN ROUTER (Command Execution Engine) ---
-def route_message(sender, msg_type, msg):
-    """
-    Central router — decides which function block to call based on
-    the customer's current state and message content.
-    """
-    current_state = user_states.get(sender, "IDLE")
-    text = msg.get('text', {}).get('body', '').strip() if msg_type == 'text' else ''
+def route_message(sender: str, msg_type: str, msg: dict) -> str:
+    session    = get_session(sender)
+    state_name = session["state"]
+    text       = msg.get("text", {}).get("body", "").strip() if msg_type == "text" else ""
     text_lower = text.lower()
 
-    # ── STATE: IDLE ──────────────────────────────────────────────────────────
-    if current_state == "IDLE":
+    logger.info(f"[ROUTER] {sender} | state={state_name} | input='{text or msg_type}'")
 
-        # 1. Check exact command registry first
-        if text_lower in commands:
-            return commands[text_lower](sender)
+    matched = find_state_by_keyword(text_lower)
+    is_esc  = matched in ESCAPE_STATES if matched else False
 
-        # 1b. Handle "info <product>" prefix — direct product detail lookup
-        #     e.g. "info visiting cards", "info banner", "info brochures"
-        if text_lower.startswith("info "):
-            query = text_lower[5:].strip()
-            for keyword in sorted(PRODUCT_CATALOG.keys(), key=len, reverse=True):
-                if keyword in query:
-                    desc = get_product_description(PRODUCT_CATALOG[keyword])
-                    return desc if desc else get_catalog()
-            return (
-                "🤔 I couldn't find that product.\n\n"
-                "Type *Catalog* to see all available products."
-            )
-
-        # 2. Detect if a product name is mentioned in the message
-        product, quantity = detect_product_and_quantity(text_lower)
-
-        # 3. Product + quantity = ORDER (check this FIRST before inquiry check)
-        #    e.g. "500 visiting cards", "order 200 banners", "place order for 100 flyers"
-        if product and quantity:
-            return confirm_catalog_order(sender, product, quantity)
-
-        # 4. Product mentioned + inquiry-style phrasing = INFO request
-        #    e.g. "tell me about banners", "what is a brochure", "do you sell stickers"
-        if product and is_product_inquiry(text_lower):
-            desc = get_product_description(product)
-            return desc if desc else get_catalog()
-
-        # 5. Only a product name, no quantity, no inquiry → ask what they want
-        if product:
-            p = PRODUCT_DETAILS.get(product, {})
-            emoji = p.get("emoji", "🖨️")
-            return (
-                f"{emoji} *{product}* — great choice!\n\n"
-                "What would you like to do?\n\n"
-                f"📋 Type *info {product.lower()}* — sizes, finish & details\n"
-                f"📦 Tell us the quantity to order — e.g. _'500 {product.lower()}'_"
-            )
-
-        # 6. General inquiry, no specific product
-        #    e.g. "what do you provide", "what services do you offer"
-        if is_product_inquiry(text_lower):
-            return get_catalog()
-
-        # 7. Order hint but no product identified yet
-        order_hints = ["order", "need", "want", "place", "buy", "print", "get"]
-        if any(hint in text_lower for hint in order_hints):
-            return start_order_flow(sender)
-
-        # 8. Fallback
-        return (
-            "🤔 Not sure what you mean. Here's what I can do:\n\n"
-            "📦 Type *Order* to start an order\n"
-            "📋 Type *Catalog* to see all products\n"
-            "🕒 Type *Hours* for our timings\n"
-            "💬 Or just say what you need:\n"
-            "   _'500 visiting cards'_ or _'200 banners'_"
-        )
-
-    # ── STATE: AWAITING_PRODUCT ──────────────────────────────────────────────
-    elif current_state == "AWAITING_PRODUCT":
-        if msg_type == 'text':
-            return handle_awaiting_product(sender, text_lower)
+    # ── Mid-flow: waiting for product or date ─────────────────────────────
+    if state_name in MID_FLOW_STATES and not is_esc:
+        fn = ACTION_MAP.get(STATES[state_name].get("action"))
+        if fn:
+            reply, next_state = fn(session, msg_type, text)
         else:
-            return "Please type the product name and quantity you need. _Example: 500 visiting cards_"
+            reply      = fill_placeholders(STATES[state_name]["message"], session)
+            next_state = STATES[state_name]["next_state"]
 
-    # ── STATE: AWAITING_DATE ─────────────────────────────────────────────────
-    elif current_state == "AWAITING_DATE":
-        return handle_awaiting_date(sender, msg_type, msg)
+    # ── Keyword matched ───────────────────────────────────────────────────
+    elif matched:
+        if is_esc and state_name in MID_FLOW_STATES:
+            reset_session(sender)
+            session = get_session(sender)
+            logger.info(f"[ESCAPE] {sender} left {state_name} via '{matched}'")
 
-    # ── UNKNOWN STATE (safety fallback) ──────────────────────────────────────
+        fn = ACTION_MAP.get(STATES[matched].get("action"))
+        if fn:
+            reply, next_state = fn(session, msg_type, text)
+        else:
+            reply      = fill_placeholders(STATES[matched]["message"], session)
+            next_state = STATES[matched]["next_state"]
+
+    # ── No keyword matched — free-form input ──────────────────────────────
     else:
-        user_states[sender] = "IDLE"
-        return get_welcome()
+        reply, next_state = action_route_idle(session, msg_type, text)
 
+    # ── Persist next_state ────────────────────────────────────────────────
+    live = get_session(sender)
+    if next_state in STATES:
+        live["state"] = next_state
 
-# --- 7. INFRASTRUCTURE ---
+    if not reply:
+        reply = fill_placeholders(STATES["WELCOME"]["message"], live)
 
-async def send_whatsapp_message(recipient_id, text):
-    url = f"https://graph.facebook.com/v17.0/{PHONE_NUMBER_ID}/messages"
+    logger.info(f"[ROUTER] {sender} -> {next_state}")
+    return reply
+
+# ---------------------------------------------------------------------------
+# 8. INFRASTRUCTURE
+# ---------------------------------------------------------------------------
+
+async def send_whatsapp_message(recipient_id: str, text: str) -> None:
+    url     = f"https://graph.facebook.com/v17.0/{PHONE_NUMBER_ID}/messages"
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
     payload = {
         "messaging_product": "whatsapp",
-        "to": recipient_id,
+        "to":   recipient_id,
         "type": "text",
-        "text": {"body": text}
+        "text": {"body": text},
     }
     async with httpx.AsyncClient() as client:
-        await client.post(url, json=payload, headers=headers)
+        r = await client.post(url, json=payload, headers=headers)
+        if r.status_code != 200:
+            logger.error(f"[SEND] Failed for {recipient_id}: {r.text}")
 
 
 @app.post("/webhook")
 async def handle(request: Request):
     data = await request.json()
     try:
-        value = data['entry'][0]['changes'][0]['value']
-        if 'messages' in value:
-            msg      = value['messages'][0]
-            sender   = msg['from']
-            msg_type = msg.get('type')
-
+        value = data["entry"][0]["changes"][0]["value"]
+        if "messages" in value:
+            msg      = value["messages"][0]
+            sender   = msg["from"]
+            msg_type = msg.get("type")
             try:
                 reply = route_message(sender, msg_type, msg)
             except Exception as e:
-                # Log the real error so you can see it in your terminal
-                logger.exception(f"route_message crashed for sender={sender}: {e}")
-                # Always send something back so the customer isn't left hanging
+                logger.exception(f"[ERROR] route_message crashed for {sender}: {e}")
                 reply = (
                     "⚠️ Something went wrong on our end.\n"
                     "Please try again or type *Hi* to restart."
                 )
-
             await send_whatsapp_message(sender, reply)
-
     except Exception as e:
-        logger.exception(f"Webhook handler error: {e}")
-
+        logger.exception(f"[ERROR] Webhook handler: {e}")
     return {"status": "success"}
 
 
