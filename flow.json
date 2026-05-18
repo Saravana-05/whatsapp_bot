@@ -1,16 +1,9 @@
 {
   "states": {
 
-    "IDLE": {
-      "message": "🖨️ *Welcome to Citizen Print!*\n\nHow can I help you today?\n\n📦 Type *Order* to place an order\n🛍️ Or just tell me what you need!\n   _Example: 'I need 500 visiting cards'_\n🕒 Type *Hours* to know our timings\n📋 Type *Catalog* to see all products",
-      "next_state": "IDLE",
-      "action": "route_idle",
-      "keywords": []
-    },
-
     "WELCOME": {
       "message": "🖨️ *Welcome to Citizen Print!*\n\nHow can I help you today?\n\n📦 Type *Order* to place an order\n🛍️ Or just tell me what you need!\n   _Example: 'I need 500 visiting cards'_\n🕒 Type *Hours* to know our timings\n📋 Type *Catalog* to see all products",
-      "next_state": "IDLE",
+      "next_state": "WELCOME",
       "action": "welcome",
       "keywords": ["hi", "hello", "hey", "menu", "help", "start"]
     },
@@ -38,14 +31,14 @@
 
     "CONFIRMED": {
       "message": "🎉 *ORDER CONFIRMED — Citizen Print*\n━━━━━━━━━━━━━━━━━━━━━━\n🛍️  *Product:*       {product}\n🔢  *Quantity:*      {quantity}\n🕒  *Order Placed:*  {placed_at}\n📅  *Delivery:*      {delivery}\n📂  *Status:*        Pending Design Review\n━━━━━━━━━━━━━━━━━━━━━━\n\n🎨 *Send your design file to:*\n   📧 *{business_email}*\n   ✏️ Subject: {sender} — {product}\n\nOur team will contact you for *payment & final confirmation*.\nThank you for choosing *Citizen Print!* 🖨️",
-      "next_state": "IDLE",
+      "next_state": "WELCOME",
       "action": "finalize_order",
       "keywords": []
     },
 
     "CATALOG": {
       "message": "__dynamic__",
-      "next_state": "IDLE",
+      "next_state": "WELCOME",
       "action": "show_catalog",
       "keywords": [
         "catalog", "products", "services",
@@ -56,7 +49,7 @@
 
     "PRODUCT_INFO": {
       "message": "__dynamic__",
-      "next_state": "IDLE",
+      "next_state": "WELCOME",
       "action": "show_product_info",
       "keywords": [
         "what is", "tell me about", "more info", "information",
@@ -68,7 +61,7 @@
 
     "HOURS": {
       "message": "__dynamic__",
-      "next_state": "IDLE",
+      "next_state": "WELCOME",
       "action": "show_hours",
       "keywords": [
         "hours", "timing", "timings", "working hours",
@@ -81,7 +74,7 @@
 
     "SUNDAY_HOLIDAY": {
       "message": "__dynamic__",
-      "next_state": "IDLE",
+      "next_state": "WELCOME",
       "action": "show_hours",
       "keywords": [
         "sunday", "holiday", "holidays", "closed",
@@ -95,110 +88,11 @@
 
     "FALLBACK": {
       "message": "🤔 Not sure what you mean. Here's what I can do:\n\n📦 Type *Order* to place an order\n📋 Type *Catalog* to see all products\n🕒 Type *Hours* for our timings\n💬 Or just say what you need:\n   _'500 visiting cards'_ or _'200 banners'_",
-      "next_state": "IDLE",
+      "next_state": "WELCOME",
       "action": null,
       "keywords": []
     }
 
-  },
-
-  "products": {
-    "Visiting Cards": {
-      "emoji": "💼",
-      "description": "Professional visiting cards to make a lasting first impression.",
-      "sizes": "Standard (3.5\" × 2\") | Square (2.5\" × 2.5\") | Slim (3.5\" × 1.5\")",
-      "finish": "Matte | Glossy | Soft Touch | UV Spot | Foil",
-      "best_for": "Professionals, freelancers, business networking",
-      "min_qty": "100 cards"
-    },
-    "Business Cards": {
-      "emoji": "🏢",
-      "description": "Premium business cards with corporate-grade print quality.",
-      "sizes": "Standard (3.5\" × 2\") | Premium (3.5\" × 2.5\")",
-      "finish": "Matte | Glossy | Embossed | Foil | Velvet Lamination",
-      "best_for": "Corporate professionals, companies, startups",
-      "min_qty": "100 cards"
-    },
-    "Flyers": {
-      "emoji": "📄",
-      "description": "Eye-catching single-sheet flyers for promotions and announcements.",
-      "sizes": "A4 | A5 | A6 | DL (1/3 A4)",
-      "finish": "Matte | Glossy | Uncoated",
-      "best_for": "Events, sales promotions, product launches, offers",
-      "min_qty": "100 flyers"
-    },
-    "Pamphlets": {
-      "emoji": "📰",
-      "description": "Folded pamphlets ideal for detailed product or service information.",
-      "sizes": "A4 Bi-fold | A4 Tri-fold | A5 Bi-fold",
-      "finish": "Matte | Glossy",
-      "best_for": "Product info, service guides, educational material",
-      "min_qty": "100 pamphlets"
-    },
-    "Brochures": {
-      "emoji": "📑",
-      "description": "Multi-panel brochures for detailed brand storytelling.",
-      "sizes": "A4 Tri-fold | A4 Z-fold | A4 Bi-fold | A5 Bi-fold",
-      "finish": "Matte | Glossy | Soft Touch Lamination",
-      "best_for": "Company profiles, product catalogs, tourism, real estate",
-      "min_qty": "50 brochures"
-    },
-    "Banners": {
-      "emoji": "🎌",
-      "description": "Large-format banners for high-visibility indoor and outdoor use.",
-      "sizes": "2x4 ft | 3x6 ft | 4x8 ft | Custom sizes available",
-      "finish": "Vinyl (Outdoor) | Fabric (Indoor) | Mesh (Windy areas)",
-      "best_for": "Events, shop fronts, trade shows, outdoor advertising",
-      "min_qty": "1 banner"
-    },
-    "Posters": {
-      "emoji": "🖼️",
-      "description": "Vibrant full-colour posters to display your message boldly.",
-      "sizes": "A3 | A2 | A1 | A0 | Custom",
-      "finish": "Matte | Glossy | Satin",
-      "best_for": "Events, advertising, decor, announcements",
-      "min_qty": "10 posters"
-    },
-    "Stickers": {
-      "emoji": "🏷️",
-      "description": "Custom-cut stickers in any shape for branding and packaging.",
-      "sizes": "Circle | Square | Rectangle | Custom die-cut shapes",
-      "finish": "Matte | Glossy | Transparent | Waterproof",
-      "best_for": "Product labels, packaging, branding, giveaways",
-      "min_qty": "100 stickers"
-    },
-    "Letterheads": {
-      "emoji": "📋",
-      "description": "Branded letterheads for professional correspondence.",
-      "sizes": "A4 (standard)",
-      "finish": "Matte | Glossy | Uncoated Bond Paper",
-      "best_for": "Business letters, quotes, invoices, official documents",
-      "min_qty": "100 sheets"
-    },
-    "Envelopes": {
-      "emoji": "✉️",
-      "description": "Custom-printed envelopes with your logo and return address.",
-      "sizes": "DL | C5 | C4 | A4 Pocket",
-      "finish": "White | Brown Kraft | Custom colour",
-      "best_for": "Corporate mailers, invitations, official correspondence",
-      "min_qty": "100 envelopes"
-    },
-    "ID Cards": {
-      "emoji": "🪪",
-      "description": "Durable PVC ID cards for staff, students, and membership use.",
-      "sizes": "CR80 Standard (3.375\" x 2.125\") wallet size",
-      "finish": "Glossy PVC | Frosted | with or without lamination pouch",
-      "best_for": "Employee IDs, student cards, membership cards, access cards",
-      "min_qty": "25 cards"
-    },
-    "Calendars": {
-      "emoji": "📅",
-      "description": "Customised wall and desk calendars branded with your logo.",
-      "sizes": "Wall Calendar (A3/A4) | Desk Calendar (A5) | Pocket Calendar",
-      "finish": "Matte | Glossy | Spiral-bound | Staple-bound",
-      "best_for": "Corporate gifting, brand promotion, offices, year-end gifts",
-      "min_qty": "25 calendars"
-    }
   },
 
   "product_keywords": {
